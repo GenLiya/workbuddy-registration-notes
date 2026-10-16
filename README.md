@@ -158,7 +158,53 @@ WorkBuddy 对「**同 IP / 同指纹 / 短时间批量注册**」有明确的风
 
 ---
 
-## 六、免责声明
+## 六、配套脚本：`banned-retry.mjs`（封号复检）
+
+被风控封掉的号**不会自己恢复**，也不值得天天人工去点「解冻」试。这个脚本就是干这个的：
+**每天一次**，自动替你去「敲门」——
+
+```
+① 解冻（POST /panel/api/accounts/<uid>/revive）
+② 临时暂停「同域其它启用号」   ← 关键：面板按池子自动选号，不暂停的话请求会落到健康号身上，测不出真相
+③ 发一个最小请求（max_tokens:5）
+④ 恢复被暂停的号
+   ├ 200 → ✅ 真解封了！保持启用 + 移出跟踪名单
+   └ 失败 → ⛔ 重新禁用，等明天再试
+```
+
+### 用法
+
+```bash
+node banned-retry.mjs              # 跑一轮（计划任务用的就是这个）
+node banned-retry.mjs --status     # 看跟踪名单
+node banned-retry.mjs --dry        # 只报告，不发请求、不改状态
+node banned-retry.mjs --probe-now  # 无视 1 小时间隔，立刻复检
+node banned-retry.mjs --add=<uid>  # 手工把某个 uid 加进名单
+node banned-retry.mjs --remove=<uid>
+```
+
+可调参数：`--base= --min-interval=3600 --model-global=global:hy3 --model-cn=cn:hy3`
+
+### ⚠️ 跟踪名单怎么来（别踩这个坑）
+
+`/status` 里的 `reason` / `disabled_reason` **会被「最后一次禁用动作」覆盖** ——
+如果你**手动禁用**了一个本来被封的号，它的封号原因就会被改写成 `manual disable (panel)`，
+**光靠 `reason` 筛会漏**。所以脚本维护自己的名单：
+
+- **种子**：脚本里 `SEED` 数组（可选，填你自己的 uid）
+- **自动识别**：每轮扫 `/status`，`reason` 含 `banned by upstream` 的自动加入
+- **移除**：探测通了 / 号已不在池子里
+- 另外：脚本**只测名单里的号**，绝不会去动你手动禁用的健康号（不覆盖你的手动意图）
+
+### 依赖与交付
+
+- **依赖**：Node.js（用原生 `fetch`，**零 npm 依赖**）
+- 需要面板在跑（默认 `http://127.0.0.1:7863`，Bearer = `config.json` 的 `api_key`）
+- **定时**：Windows 下用 `wscript.exe //B banned_retry_run.vbs`（隐藏窗口、不闪黑框）+ 计划任务每日一次
+
+---
+
+## 七、免责声明
 
 - 本文仅记录技术研究与实测现象，不鼓励违反任何服务条款的行为。
 - 涉及账号、积分、风控策略的具体数值与行为可能随平台调整而变化，以官方为准。
