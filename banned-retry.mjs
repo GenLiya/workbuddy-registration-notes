@@ -256,10 +256,18 @@ async function runOnce() {
       delete st.tracked[rec.uid];
       recovered++;
     } else {
-      // 再禁用（面板多半已自动禁用，这里兜底）
-      const rd = await api(`/panel/api/accounts/${rec.uid}/disable`, { method: 'POST' });
+      // ⚠️ 兜底禁用只在「还没被禁用」时才调 —— 面板在请求失败时本来就会自动禁用；
+      //    再调一次 /disable 会把 reason 覆盖成 "manual disable (panel)"，
+      //    丢掉「account banned by upstream (...)" 这个原始原因（诊断要看它）。
+      const fresh = await api('/status', { timeout: 20000 });
+      const cur = (fresh.json?.accounts || []).find((x) => x.uid === rec.uid);
+      if (cur && !cur.disabled) {
+        const rd = await api(`/panel/api/accounts/${rec.uid}/disable`, { method: 'POST' });
+        log(`   ⛔ ${a.nickname} 仍被封 → 兜底禁用（HTTP ${rd.status}）`);
+      } else {
+        log(`   ⛔ ${a.nickname} 仍被封（面板已自动禁用，保留原始 reason）`);
+      }
       rec.lastResult = `⛔ 仍被封（${detail}）`;
-      log(`   ⛔ ${a.nickname} 仍被封 → 重新禁用（HTTP ${rd.status}）`);
     }
   }
 
